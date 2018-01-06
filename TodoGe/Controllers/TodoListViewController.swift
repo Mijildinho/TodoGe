@@ -7,19 +7,19 @@
 //
 
 import UIKit
-import CoreData
+import RealmSwift
 
 class TodoListViewController: UITableViewController{
     
-    var itemArray = [Item]()
+    var todoItems : Results<Item>?
+    
+    let realm = try! Realm()
     
     var selectedCategory : Category?{
         didSet{
             loadItems()
         }
     }
-    
-    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -32,25 +32,28 @@ class TodoListViewController: UITableViewController{
     
     //First - Create tableView with numberOfRowInSection function. This indicates the amount(count) in the itemArray.
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return itemArray.count
+        return todoItems?.count ?? 1
     }
     
     //Second - Create tableView with CellForRowAt function. This indicates the cell with indentifier, and display that cells on the screen.
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         
-        let longPressedRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(longPressed(_:)))
+//        let longPressedRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(longPressed(_:)))
         
         let cell = tableView.dequeueReusableCell(withIdentifier: "ToDoItemCell", for: indexPath)
         
-        let item = itemArray[indexPath.row]
-        
-        cell.addGestureRecognizer(longPressedRecognizer)
+        if let item = todoItems?[indexPath.row]{
             
-        cell.textLabel?.text = item.title
-        
-        // Adding a checkmark when it's indexPath cell is selected. If It's has selected, remove checkmark
-        //Ternary operator ==> value = condition ? valueIfTrue : valueIfFalse
-        cell.accessoryType = item.done ? .checkmark : .none
+            cell.textLabel?.text = item.title
+            
+            //cell.addGestureRecognizer(longPressedRecognizer)
+            
+            // Adding a checkmark when it's indexPath cell is selected. If It's has selected, remove checkmark
+            //Ternary operator ==> value = condition ? valueIfTrue : valueIfFalse
+            cell.accessoryType = item.done ? .checkmark : .none
+        }else{
+            cell.textLabel?.text = "No Items Added"
+        }
         
         return cell
     }
@@ -60,14 +63,18 @@ class TodoListViewController: UITableViewController{
     //Third - Create tableView with didSelectRowAt function. This indicates the selected indexpath cell on the screen
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         
-//        //Delete item from the array
-//        context.delete(itemArray[indexPath.row])
-//        itemArray.remove(at: indexPath.row)
+        if let item = todoItems?[indexPath.row] {
+            do{
+                try realm.write {
+                    item.done = !item.done
+                }
+            }catch{
+                print("Error saving done status, \(error)")
+            }
+        }
         
-        itemArray[indexPath.row].done = !itemArray[indexPath.row].done
+        tableView.reloadData()
         
-        self.saveItems()
-
         //Deselect the indexPath row with animation
         tableView.deselectRow(at: indexPath, animated: true)
         
@@ -76,40 +83,50 @@ class TodoListViewController: UITableViewController{
     //MARK: - Add New Items
 
     @IBAction func addButtonPressed(_ sender: UIBarButtonItem) {
-        
+
         var textField = UITextField()
-        
+
         let alert = UIAlertController(title: "Add New TodoGe Item", message: "", preferredStyle: .alert)
-        
+
         let action = UIAlertAction(title: "Add Item", style: .default) { (action) in
             //what will happen once the user click the add button on our UIAlert
+
+            if let currentCategory = self.selectedCategory{
+                do {
+                    try self.realm.write {
+                        let newItem = Item()
+                        newItem.title = textField.text!
+                        newItem.dateCreated = Date()
+                        currentCategory.items.append(newItem)
+                    }
+                }catch{
+                    print("Errot saving new items, \(error)")
+                }
+           
+            }
             
-            let newItem = Item(context: self.context)
-            newItem.title = textField.text!
-            newItem.done = false
-            newItem.parentCategory = self.selectedCategory
-            self.itemArray.append(newItem)
-            
-            self.saveItems()
+            self.tableView.reloadData()
         }
-        
+
         alert.addTextField { (alertTextField) in
             alertTextField.placeholder = "Create new line"
             textField = alertTextField
         }
-        
+
         alert.addAction(action)
-        
+
         present(alert, animated: true, completion: nil)
-        
+
     }
     
     //MARK - Model Manupulation Methods
     
-    func saveItems() {
+    func save(item : Item) {
         
         do{
-           try context.save()
+            try realm.write {
+                realm.add(item)
+            }
         }catch{
             print("Error saving context \(error)")
         }
@@ -117,79 +134,65 @@ class TodoListViewController: UITableViewController{
         self.tableView.reloadData()
     }
     
-    func loadItems(with request: NSFetchRequest<Item> = Item.fetchRequest(), predicate: NSPredicate? = nil) {
-        
-        let categoryPredicate = NSPredicate(format: "parentCategory.name MATCHES %@", selectedCategory!.name!)
-        
-        if let addtionalPredicate = predicate{
-            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [categoryPredicate, addtionalPredicate])
-        }else{
-            request.predicate = categoryPredicate
-        }
-        
-        do{
-            itemArray = try context.fetch(request)
-        }catch{
-            print("Error fetching data from context \(error)")
-        }
+    func loadItems() {
+
+        todoItems = selectedCategory?.items.sorted(byKeyPath: "title", ascending: true)
         
         tableView.reloadData()
+
     }
 
-    // Model Manupulation Methods - Update Items in Core Data
-    @objc func longPressed(_ sender: UIGestureRecognizer){
-        if sender.state == UIGestureRecognizerState.ended{
-            let longPressedLocation = sender.location(in: self.tableView)
-            if let pressedIndexPath = self.tableView.indexPathForRow(at: longPressedLocation){
-                
-                var task = UITextField()
-                let alert = UIAlertController(title: "Modify Task", message: "", preferredStyle: .alert)
-                
-                let action = UIAlertAction(title: "Modify", style: .default){ (action) in
-                    
-                    self.itemArray[pressedIndexPath.row].setValue("\(task.text ?? "")", forKey: "title")
-                    self.saveItems()
-                    
-                }
-                
-                alert.addTextField { (alertTextField) in
-                    task = alertTextField
-                    task.text = "\(self.itemArray[pressedIndexPath.row].title!)"
-                }
-                
-                alert.addAction(action)
-                
-                present(alert, animated: true, completion: nil)
-            }
-        }
-        
-    }
+//    // Model Manupulation Methods - Update Items in Core Data
+//    @objc func longPressed(_ sender: UIGestureRecognizer){
+//        if sender.state == UIGestureRecognizerState.ended{
+//            let longPressedLocation = sender.location(in: self.tableView)
+//            if let pressedIndexPath = self.tableView.indexPathForRow(at: longPressedLocation){
+//                
+//                var task = UITextField()
+//                let alert = UIAlertController(title: "Modify Task", message: "", preferredStyle: .alert)
+//                
+//                let action = UIAlertAction(title: "Modify", style: .default){ (action) in
+//                    
+//                    self.itemArray[pressedIndexPath.row].setValue("\(task.text ?? "")", forKey: "title")
+//                    self.saveItems()
+//                    
+//                }
+//                
+//                alert.addTextField { (alertTextField) in
+//                    task = alertTextField
+//                    task.text = "\(self.itemArray[pressedIndexPath.row].title!)"
+//                }
+//                
+//                alert.addAction(action)
+//                
+//                present(alert, animated: true, completion: nil)
+//            }
+//        }
+//        
+//    }
 }
 
 //MARK: - Search bar methods
 extension TodoListViewController: UISearchBarDelegate{
-    
+
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+
+        todoItems = todoItems?.filter("title CONTAINS[cd] %@", searchBar.text!).sorted(byKeyPath: "dateCreated", ascending: true)
         
-        let request : NSFetchRequest<Item> = Item.fetchRequest()
+        tableView.reloadData()
         
-        let predicate  = NSPredicate(format: "title CONTAINS[cd] %@", searchBar.text!)
-        
-        request.sortDescriptors = [NSSortDescriptor(key: "title", ascending: true)]
-        
-        loadItems(with: request, predicate: predicate)
     }
-    
+
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
         if searchBar.text?.count == 0{
             loadItems()
-            
+
             DispatchQueue.main.async {
                 searchBar.resignFirstResponder()
             }
-            
+
         }
     }
-    
+
 }
 
