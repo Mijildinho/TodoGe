@@ -8,18 +8,21 @@
 
 import UIKit
 import RealmSwift
+import ChameleonFramework
 
-class CategoryTableViewController: UITableViewController {
+class CategoryTableViewController: SwipeTableViewController {
     
     let realm = try! Realm()
     
     var categories: Results<Category>?
-
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
         loadCategories()
-
+        
+        tableView.separatorStyle = .none
+        
     }
     
     //MARK: - TableView Datsource Methods
@@ -32,9 +35,11 @@ class CategoryTableViewController: UITableViewController {
     //Second - Create tableView with CellForRowAt function. This indicates the cell with indentifier, and display that cells on the screen.
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         
-        let cell = tableView.dequeueReusableCell(withIdentifier: "CategoryCell", for: indexPath)
+        let cell = super.tableView(tableView, cellForRowAt: indexPath)
         
         cell.textLabel?.text = categories?[indexPath.row].name ?? "No Categories Added Yet"
+        
+        cell.backgroundColor = UIColor(hexString: categories?[indexPath.row].backgroundColor ?? "48BAFF")
         
         return cell
     }
@@ -69,10 +74,26 @@ class CategoryTableViewController: UITableViewController {
     }
     
     func loadCategories() {
-
+        
         categories = realm.objects(Category.self)
-
+        
         tableView.reloadData()
+    }
+    
+    //MARK: - Delete Data From Swipe
+    
+    override func updateModel(at indexPath: IndexPath) {
+        
+        if let categoryDeletion = self.categories?[indexPath.row]{
+            do {
+                try self.realm.write {
+                    self.realm.delete(categoryDeletion)
+                }
+            }catch{
+                print("Error deleting new items, \(error)")
+            }
+            
+        }
     }
     
     //MARK: - Add New Categories
@@ -88,7 +109,8 @@ class CategoryTableViewController: UITableViewController {
             
             let newCategory = Category()
             newCategory.name = textField.text!
-            
+            newCategory.backgroundColor = UIColor.randomFlat.hexValue()
+            print(newCategory.backgroundColor)
             self.save(category: newCategory)
         }
         
@@ -105,4 +127,3 @@ class CategoryTableViewController: UITableViewController {
     
 }
 
-//MARK: - Search bar methods
